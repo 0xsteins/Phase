@@ -148,6 +148,7 @@ is a fixed-size digest of the canonical payload, keeping it under wallet
 
 | Flag | Env | Purpose | Default | Rollback |
 |------|-----|---------|---------|----------|
+| `phase-105` | `NEXT_PUBLIC_FEATURE_PHASE_105` / `FEATURE_PHASE_105` | Co-authored world conflict detection: `POST /api/world` compares `expected_version` / `expected_vector_clock` (object, `Map` or `[node, counter]` entries — normalized before comparison) with the stored world and returns `409 WORLD_VERSION_CONFLICT` with `order` (`before`/`after`/`concurrent`) | off | Unset var, restart — saves overwrite unconditionally; stored `vector_clock` fields are ignored |
 | `phase-109` | `NEXT_PUBLIC_FEATURE_PHASE_109` / `FEATURE_PHASE_109` | Collaborative world permissions: owner-enforced role assignment (`editor`/`viewer`) per wallet via `GET/POST /api/world/[collection_id]/roles`; POST requires `X-Wallet-Signature` | off | Unset var, restart — roles endpoint returns 404; existing role data on disk is unaffected |
 | `phase-110` | `NEXT_PUBLIC_FEATURE_PHASE_110` / `FEATURE_PHASE_110` | Full-text narrative search across world collections: filter by entity ID, location, or free text via `GET /api/world/search` | off | Unset var, restart — search route returns 404 |
 | `phase-112` | `NEXT_PUBLIC_FEATURE_PHASE_112` / `FEATURE_PHASE_112` | World export to portable formats (`json`, `markdown`) via `GET /api/world/[collection_id]/export?format=` with `Content-Disposition` download headers | off | Unset var, restart — export route returns 404 |
