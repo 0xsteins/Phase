@@ -51,14 +51,49 @@ const ACHIEVEMENT_NAMES: Record<AchievementId, string> = {
   phaselq_100: "PHASELQ ×100",
 };
 
+/** Stellar G-addresses are case-insensitive on input; store them under one canonical uppercase key. */
+function walletKey(wallet: string): string {
+  return wallet.trim().toUpperCase();
+}
+
+function mergeEntries(
+  a: WalletAchievements,
+  b: WalletAchievements,
+): WalletAchievements {
+  const byId = new Map<AchievementId, Achievement>();
+  for (const ach of [...a.unlocked, ...b.unlocked]) {
+    const prev = byId.get(ach.id);
+    if (!prev || ach.unlocked_at < prev.unlocked_at) byId.set(ach.id, ach);
+  }
+  const max = (x?: number, y?: number) =>
+    x === undefined ? y : y === undefined ? x : Math.max(x, y);
+  const latest = (b.last_daily ?? 0) > (a.last_daily ?? 0) ? b : a;
+  return {
+    unlocked: [...byId.values()],
+    mint_count: max(a.mint_count, b.mint_count),
+    daily_streak: latest.daily_streak,
+    last_daily: latest.last_daily,
+    total_upvotes: max(a.total_upvotes, b.total_upvotes),
+    follower_count: max(a.follower_count, b.follower_count),
+    narrator_count: max(a.narrator_count, b.narrator_count),
+  };
+}
+
 async function readStore(): Promise<AchievementStore> {
+  let raw: AchievementStore;
   try {
-    return JSON.parse(
+    raw = JSON.parse(
       await readFile(serverDataJsonPath("achievements"), "utf8"),
     ) as AchievementStore;
   } catch {
     return {};
   }
+  const store: AchievementStore = {};
+  for (const [wallet, entry] of Object.entries(raw)) {
+    const key = walletKey(wallet);
+    store[key] = store[key] ? mergeEntries(store[key]!, entry) : entry;
+  }
+  return store;
 }
 
 async function writeStore(data: AchievementStore): Promise<void> {
@@ -71,20 +106,21 @@ function ensureEntry(
   store: AchievementStore,
   wallet: string,
 ): WalletAchievements {
-  if (!store[wallet]) store[wallet] = { unlocked: [] };
-  return store[wallet]!;
+  const key = walletKey(wallet);
+  if (!store[key]) store[key] = { unlocked: [] };
+  return store[key]!;
 }
 
 export async function getAchievements(wallet: string): Promise<Achievement[]> {
   const store = await readStore();
-  return store[wallet]?.unlocked ?? [];
+  return store[walletKey(wallet)]?.unlocked ?? [];
 }
 
 export async function getWalletData(
   wallet: string,
 ): Promise<WalletAchievements> {
   const store = await readStore();
-  return store[wallet] ?? { unlocked: [] };
+  return store[walletKey(wallet)] ?? { unlocked: [] };
 }
 
 export async function unlockAchievement(
@@ -96,7 +132,7 @@ export async function unlockAchievement(
   const entry = ensureEntry(store, wallet);
   if (entry.unlocked.some((a) => a.id === id)) return false; // idempotent
   entry.unlocked.push({ id, unlocked_at: Date.now(), tx_evidence: evidence });
-  store[wallet] = entry;
+  store[walletKey(wallet)] = entry;
   await writeStore(store);
   // Notify (fire-and-forget)
   void createNotification(wallet, "achievement_unlocked", {
@@ -190,7 +226,7 @@ export async function checkAndUnlock(
     await tryUnlock("phaselq_100");
   }
 
-  store[wallet] = entry;
+  store[walletKey(wallet)] = entry;
   await writeStore(store);
   return newUnlocks;
 }
