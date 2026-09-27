@@ -72,6 +72,7 @@ flowchart TB
 | `lib/phase-copy.ts` | Centralized i18n dictionary (EN/ES) |
 | `lib/server-data-paths.ts` | Writable data location abstraction |
 | `lib/feature-flags.ts` | Flag registry (phase-107,111,113,114 + 116,117,119,120 + 121..124, env resolution, rollback notes) |
+| `lib/world-conflict.ts` | World save conflict detection (phase-105): version check + per-author vector clock normalization (object / `Map` / entries array) and ordering |
 | `lib/story-arc-continuity.ts` | AI story-arc continuity check against recent world narratives (phase-107) |
 | `lib/narrative-world-store.ts` | World/narrative JSON store + localized per-(tokenId,lang) narrative cache (phase-111) + world export snapshot builder and markdown renderer (phase-112) + collaborative role store with ownership enforcement (phase-109) + lore link store with back-reference index (phase-115) |
 | `lib/ipfs-upload-retry.ts` | IPFS upload retry w/ exponential backoff + sha256 checksum (phase-120) |
@@ -147,6 +148,7 @@ settlement verifier and must not accept unsigned base64 payloads.
 
 | Flag | Route | Extension | Flag off |
 |------|-------|-----------|----------|
+| `phase-105` | `POST /api/world` | Accepts `expected_version` and `expected_vector_clock`; `409 WORLD_VERSION_CONFLICT` with `order`, `server_version`, `server_vector_clock`, `current` when the client's view is stale or concurrent. Success returns the new `version` and `vector_clock` | Unconditional overwrite |
 | `phase-109` | `GET /api/world/[collection_id]/roles` | Returns current role map (`editor`/`viewer`) for the world collection | `404` disabled |
 | `phase-109` | `POST /api/world/[collection_id]/roles` | Assigns a role to a target wallet; requires `X-Wallet-Signature` header and acting wallet must be the world owner (403 otherwise) | `404` disabled |
 | `phase-110` | `GET /api/world/search` | Full-text narrative search across all world collections; supports `?entity=<id>`, `?location=<text>`, `?q=<text>` | `404` disabled |

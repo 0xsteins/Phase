@@ -2,6 +2,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { serverDataJsonPath } from "@/lib/server-data-paths"
+import { incrementVectorClock, type VectorClock } from "@/lib/world-conflict"
 
 export type NarratorTone = "enigmatic" | "epic" | "scientific" | "folkloric"
 
@@ -12,6 +13,7 @@ export type WorldCollectionData = {
   narrator_tone?: NarratorTone
   creator_wallet?: string
   version?: number
+  vector_clock?: VectorClock
 }
 
 export type WorldNarrativeData = {
@@ -50,11 +52,11 @@ export async function saveWorldForCollection(
   data: Pick<WorldCollectionData, "world_name" | "world_prompt" | "narrator_tone"> & {
     creator_wallet?: string
   },
-): Promise<void> {
+): Promise<WorldCollectionData> {
   const filePath = serverDataJsonPath("worldCollections")
   const store = await readJsonStore<WorldCollectionsStore>(filePath)
   const existing = store[String(collectionId)]
-  store[String(collectionId)] = {
+  const saved: WorldCollectionData = {
     ...existing,
     world_name: data.world_name,
     world_prompt: data.world_prompt,
@@ -62,8 +64,11 @@ export async function saveWorldForCollection(
     ...(data.creator_wallet !== undefined ? { creator_wallet: data.creator_wallet } : {}),
     created_at: existing?.created_at ?? Date.now(),
     version: (existing?.version ?? 0) + 1,
+    vector_clock: incrementVectorClock(existing?.vector_clock, data.creator_wallet ?? "anonymous"),
   }
+  store[String(collectionId)] = saved
   await writeJsonStore(filePath, store)
+  return saved
 }
 
 export async function getAllWorldCollections(): Promise<WorldCollectionsStore> {
