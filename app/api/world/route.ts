@@ -11,7 +11,7 @@ import {
   type NarratorTone,
 } from "@/lib/narrative-world-store"
 import { checkAndUnlock } from "@/lib/achievement-store"
-import { checkWorldConflict } from "@/lib/world-conflict"
+import { checkWorldConflict, normalizeVectorClock, type VectorClock } from "@/lib/world-conflict"
 
 export type WorldsListItem = {
   collectionId: number
@@ -23,6 +23,8 @@ export type WorldsListItem = {
   narrator_tone?: NarratorTone
   /** Current revision — pass as `expected_version` on the next save (phase-105). */
   version?: number
+  /** Per-author vector clock — pass as `expected_vector_clock` on the next save (phase-105). */
+  vector_clock?: VectorClock
 }
 
 export type WorldsGlobalStats = {
@@ -46,6 +48,7 @@ export async function GET() {
         latestNarrative: narratives[0]?.narrative ?? null,
         narrator_tone: data.narrator_tone,
         version: data.version,
+        vector_clock: normalizeVectorClock(data.vector_clock) ?? undefined,
       }
     }),
   )
@@ -80,6 +83,8 @@ type WorldSaveBody = {
   creator_wallet?: unknown
   /** Client's last-known world version — only checked when phase-105 is enabled. */
   expected_version?: unknown
+  /** Client's last-known vector clock (object or `[node, counter]` entries) — phase-105. */
+  expected_vector_clock?: unknown
 }
 
 function isNonEmptyString(v: unknown): v is string {
@@ -129,7 +134,49 @@ export async function POST(request: NextRequest) {
       ? body.creator_wallet
       : undefined
 
-  await saveWorldForCollection(collectionId, {
+  let expectedVersion: number | undefined
+  if (body.expected_version !== undefined) {
+    if (!Number.isSafeInteger(body.expected_version) || (body.expected_version as number) < 0) {
+      return NextResponse.json(
+        { error: "expected_version debe ser un entero no negativo" },
+        { status: 400 },
+      )
+    }
+    expectedVersion = body.expected_version as number
+  }
+
+  let expectedVectorClock: VectorClock | undefined
+  if (body.expected_vector_clock !== undefined) {
+    const normalized = normalizeVectorClock(body.expected_vector_clock)
+    if (!normalized) {
+      return NextResponse.json(
+        { error: "expected_vector_clock inválido: se espera un objeto o una lista de pares [nodo, contador]" },
+        { status: 400 },
+      )
+    }
+    expectedVectorClock = normalized
+  }
+
+  const conflict = checkWorldConflict(
+    await getWorldForCollection(collectionId),
+    expectedVersion,
+    expectedVectorClock,
+  )
+  if (conflict.conflict) {
+    return NextResponse.json(
+      {
+        error: "WORLD_VERSION_CONFLICT",
+        order: conflict.order,
+        server_version: conflict.serverVersion,
+        client_version: conflict.clientVersion,
+        server_vector_clock: conflict.serverVectorClock,
+        current: conflict.current,
+      },
+      { status: 409 },
+    )
+  }
+
+  const saved = await saveWorldForCollection(collectionId, {
     world_name: body.world_name.trim(),
     world_prompt: body.world_prompt.trim(),
     narrator_tone: isValidTone(body.narrator_tone) ? body.narrator_tone : undefined,
@@ -143,5 +190,10 @@ export async function POST(request: NextRequest) {
     void checkAndUnlock(creatorWallet, { has_world: true }).catch(() => { /* silent */ })
   }
 
-  return NextResponse.json({ ok: true, collection_id: collectionId })
+  return NextResponse.json({
+    ok: true,
+    collection_id: collectionId,
+    version: saved.version,
+    vector_clock: saved.vector_clock,
+  })
 }
